@@ -4,6 +4,9 @@ from tkinter.colorchooser import askcolor
 import math
 import functools
 import random
+import colorsys
+
+hex_width = 7
 
 @functools.total_ordering
 class Hexagon:
@@ -19,7 +22,7 @@ class Hexagon:
             self.color = '#ffffff'
         else:
             self.color = color
-        print(f"Initing Hexagon at {(self.array, self.row, self.column)}.")
+        # print(f"Initing Hexagon at {(self.array, self.row, self.column)}.")
 
     def lock(self):
         self.isLocked = True
@@ -86,7 +89,7 @@ def draw_regular_hexagon(canvas, hexagon):
     canvas_width = canvas.winfo_width()
     canvas_height = canvas.winfo_height()
     # Calculate the radius as 5% of the smallest dimension of the window
-    r = min(canvas_width, canvas_height) * 0.025
+    r = 0.95 * (min(canvas_width, canvas_height) / ((2*hex_width + 1) * math.sqrt(3)))
     canvas_mid_x = canvas_width / 2
     canvas_mid_y = canvas_height / 2
 
@@ -105,7 +108,8 @@ def draw_regular_hexagon(canvas, hexagon):
 
     # print(f"Hexagon {(hexagon.array, hexagon.row, hexagon.column)} - Cartesian Coordinates: {x}, {y}")
     if hexagon.isLocked:
-        outline = "#000000"
+        # outline = "#000000"
+        outline = hexagon.color
     else:
         outline = "#AAAAAA"
     object_id = canvas.create_polygon(points, outline=outline, fill=hexagon.color, width=3)
@@ -172,6 +176,32 @@ def hex_choose_color(event, id_mapping):
         print(f"Canceled color dialog - color is {hexagon.color}")
     redraw_hexagons()
 
+def reset_all():
+    print("Resetting all...")
+    reset_hexagons('all')
+
+def reset_unlocked():
+    print("Resetting unlocked...")
+    reset_hexagons('unlocked')
+
+def reset_hexagons(which):
+    hex_key_list = list(hexagons.keys())
+    # sort first so we get a deterministic order for hexagons
+    hex_key_list.sort()
+    reset_count = 0
+    for key in hex_key_list:
+        if which == 'unlocked':
+            if hexagons[key].isLocked:
+                continue
+        hexagons[key].isInitialized = False
+        hexagons[key].isLocked = False
+        hexagons[key].color = "#ffffff"
+        reset_count += 1
+    print(f"Reset {reset_count} hexagons.")
+    redraw_hexagons()
+    return
+
+
 def reflow_click_callback():
     print("Executing color reflow...")
     reflow_colors(-1)
@@ -191,22 +221,67 @@ def rgb_to_hex(rgb):
 
 def get_neighbor_blend(hexmap, neighbors, coordinates):
     num_neighbors = len(neighbors)
+    mode = blend_mode.get()
     # print(f"Hexagon {coordinates} has {num_neighbors} neighbors.")
-    total_r = 0
-    total_g = 0
-    total_b = 0
-    for neighbor in neighbors:
-        r, g, b = hex_to_rgb(hexmap[neighbor].color)
-        # print(f"Neighbor {neighbor} has color {(r,g,b)}")
-        total_r += r
-        total_g += g
-        total_b += b
-        # print(f"Total colors: {(total_r, total_g, total_b)}")
-    out_r = total_r//num_neighbors
-    out_g = total_g//num_neighbors
-    out_b = total_b//num_neighbors
-    # print(f"Output colors: {(out_r, out_g, out_b)}")
-    return rgb_to_hex((out_r, out_g, out_b))
+    # print(f"Blend mode = {mode}")
+    if mode == "rgb":
+        total_r = 0
+        total_g = 0
+        total_b = 0
+        for neighbor in neighbors:
+            r, g, b = hex_to_rgb(hexmap[neighbor].color)
+            # print(f"Neighbor {neighbor} has color {(r,g,b)}")
+            total_r += r
+            total_g += g
+            total_b += b
+            # print(f"Total colors: {(total_r, total_g, total_b)}")
+        out_r = total_r//num_neighbors
+        out_g = total_g//num_neighbors
+        out_b = total_b//num_neighbors
+        # print(f"Output colors: {(out_r, out_g, out_b)}")
+        return rgb_to_hex((out_r, out_g, out_b))
+    elif mode == "hsl":
+        total_h = 0
+        total_l = 0
+        total_s = 0
+        for neighbor in neighbors:
+            rgb = (elem/255.0 for elem in hex_to_rgb(hexmap[neighbor].color))
+            #print(rgb)
+            neighbor_hsl = colorsys.rgb_to_hls(*rgb)
+            #print(neighbor_hsl)
+            total_h += neighbor_hsl[0]
+            total_l += neighbor_hsl[1]
+            total_s += neighbor_hsl[2]
+        out_h = total_h/num_neighbors
+        out_l = total_l/num_neighbors
+        out_s = total_s/num_neighbors
+        out_rgb_norm = colorsys.hls_to_rgb(out_h, out_l, out_s)
+        out_rgb = tuple([round(elem*255) for elem in out_rgb_norm])
+        #print(out_rgb)
+        return rgb_to_hex(out_rgb)
+    elif mode == "sRGB (2.2)":
+        total_r = 0
+        total_g = 0
+        total_b = 0
+        for neighbor in neighbors:
+            r, g, b = hex_to_rgb(hexmap[neighbor].color)
+            # print(f"Neighbor {neighbor} has color {(r,g,b)}")
+            total_r += pow(r * 1.0, 2.2)
+            total_g += pow(g * 1.0, 2.2)
+            total_b += pow(b * 1.0, 2.2)
+            # print(f"Total colors: {(total_r, total_g, total_b)}")
+        srgb_r = total_r/num_neighbors
+        srgb_g = total_g/num_neighbors
+        srgb_b = total_b/num_neighbors
+        final_r = round(pow(srgb_r, 1.0/2.2))
+        final_g = round(pow(srgb_g, 1.0/2.2))
+        final_b = round(pow(srgb_b, 1.0/2.2))
+        # print(f"Output colors: {(out_r, out_g, out_b)}")
+        return rgb_to_hex((final_r, final_g, final_b))
+
+
+
+
 
 
 def reflow_colors(steps, depth=0):
@@ -250,21 +325,27 @@ def reflow_colors(steps, depth=0):
             newly_initialized += 1
             hexagons[key].isInitialized = True
     print(f"{total_color_changes} hexagons updated. {newly_initialized} hexagons initialized.")
-    redraw_hexagons()
-
     # need to add another case that breaks out of the infinite loop
     if (newly_initialized == 0 and total_color_changes == 0):
         print(f"Nothing else to reflow. Total iterations: {depth}")
+        redraw_hexagons()
         return
     if (num_locked == 0 or num_initialized == 0) and steps == -1:
         print(f"Don't reflow with nothing locked or initialized...")
+        redraw_hexagons()
         return
     # where no hexagons changed
     if depth == steps:
         # base case
+        redraw_hexagons()
         return
     else:
-        reflow_colors(steps, depth=depth)
+        try:
+            reflow_colors(steps, depth=depth)
+        except RecursionError as e:
+            print(f"Failed to converge on colors in {depth} iterations. Aborting.")
+            redraw_hexagons()
+        return
 
 def create_neighbor_hexagons(hexagon):
     a = hexagon.array
@@ -277,11 +358,12 @@ def create_neighbor_hexagons(hexagon):
             # *candidate expands the candidate tuple
             created_hexagons.append(Hexagon(*candidate))
         else:
-            print(f"Not generating {candidate} as this already exists.")
+            # print(f"Not generating {candidate} as this already exists.")
+            pass
     return created_hexagons
 
 def main():
-    global hexagons, canvas, hex_canvas_objects
+    global hexagons, canvas, hex_canvas_objects, hex_width, blend_mode
     root = tk.Tk()
     root.resizable(True, True)
     root.title("Pointy-Top Hexagons")
@@ -306,26 +388,39 @@ def main():
     reflow_step_button = tk.Button(botframe, text="Step Reflow", command=step_click_callback)
     reflow_step_button.place(x=50, y=100)
 
+    reset_button = tk.Button(botframe, text="Reset All", command=reset_all)
+    reset_button.place(x=200, y=50)
+
+    reset_button = tk.Button(botframe, text="Reset unlocked", command=reset_unlocked)
+    reset_button.place(x=200, y=100)
+
+    # create blend mode selection dropdown
+    blend_mode = tk.StringVar(root)
+    blend_mode.set("rgb")
+
+    blend_option = tk.OptionMenu(botframe, blend_mode, "rgb", "hsl", "sRGB (2.2)")
+    blend_option.place(x=350, y=50)
+    # blend_option.pack()
+
     root.update()
 
     hexagons = dict({(0,0,0): Hexagon(0,0,0)})
-    print(hexagons)
-    depth = 10
+    # print(hexagons)
     new_hexagons = [hexagons[key] for key in hexagons.keys()]
     new_hexagons.sort()
-    print(new_hexagons)
-    for i in range(depth):
+    # print(new_hexagons)
+    for i in range(hex_width):
         current_hexagons = new_hexagons
         new_hexagons = []
         for current_hex in current_hexagons:
-            print(current_hex)
+            # print(current_hex)
             created_hexagons = create_neighbor_hexagons(current_hex)
             new_hexagons += list(created_hexagons)
-            print(f"Created {len(created_hexagons)} hexagons.")
-            print(new_hexagons)
+            # print(f"Created {len(created_hexagons)} hexagons.")
+            # print(new_hexagons)
             for hexagon in new_hexagons:
                 hexagons[(hexagon.array, hexagon.row, hexagon.column)] = hexagon
-            print(f"Total hexagons: {len(hexagons)}")
+            # print(f"Total hexagons: {len(hexagons)}")
     hexagon_list = [hexagons[key] for key in hexagons.keys()]
     hexagon_list.sort()
     for hexagon in hexagon_list:
